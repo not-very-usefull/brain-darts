@@ -17,11 +17,11 @@
   }
   .wrap{max-width:760px;margin:0 auto;}
   h1{
-    font-size:2.2em;margin:0 0 4px;letter-spacing:-0.5px;
+    font-size:2.2em;margin:0 0 4px;letter-spacing:-0.5px;text-align:center;
     background:linear-gradient(90deg,var(--accent),var(--accent2));
     -webkit-background-clip:text;background-clip:text;color:transparent;
   }
-  .tagline{color:var(--muted);margin-bottom:24px;font-size:0.95em;}
+  .tagline{color:var(--muted);margin-bottom:24px;font-size:0.95em;text-align:center;}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:16px;}
   label{display:block;font-size:0.85em;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;}
   select,input[type=text],input[type=number]{
@@ -57,6 +57,39 @@
     background:var(--panel2);border:1px solid var(--border);padding:5px 10px;border-radius:20px;
   }
   .source-badge a{color:var(--accent2);text-decoration:none;}
+  .banner{
+    display:none; border-radius:10px; text-align:center; font-weight:800;
+    font-size:1.05em; padding:12px 14px; margin-bottom:14px;
+  }
+  .banner.show{
+    display:block;
+    animation-name: bannerPop;
+    animation-duration: 1.6s;
+    animation-timing-function: ease;
+    animation-fill-mode: forwards;
+  }
+  .banner.show.bust{
+    animation-name: bannerPop, bannerShake;
+    animation-duration: 1.6s, 0.5s;
+    animation-timing-function: ease, ease-in-out;
+  }
+  .banner.good{background:rgba(74,222,128,0.15);color:var(--good);border:1px solid rgba(74,222,128,0.4);}
+  .banner.bust{background:rgba(248,113,113,0.15);color:var(--bad);border:1px solid rgba(248,113,113,0.4);}
+  .banner.win{background:rgba(255,209,102,0.15);color:#ffd166;border:1px solid rgba(255,209,102,0.4);}
+  @keyframes bannerPop{
+    0%{ opacity:0; transform:scale(0.85) translateY(-6px); }
+    12%{ opacity:1; transform:scale(1.03) translateY(0); }
+    18%{ transform:scale(1); }
+    85%{ opacity:1; transform:scale(1); }
+    100%{ opacity:0; transform:scale(0.97); }
+  }
+  @keyframes bannerShake{
+    0%,100%{ margin-left:0; }
+    20%{ margin-left:-8px; }
+    40%{ margin-left:7px; }
+    60%{ margin-left:-5px; }
+    80%{ margin-left:3px; }
+  }
   .scoreboard{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;}
   .pchip{
     display:flex;justify-content:space-between;align-items:center;background:var(--panel2);
@@ -65,9 +98,11 @@
   .pchip.active{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2) inset;}
   .pchip.busted{opacity:0.55;}
   .pchip.done{opacity:0.75;}
+  .pchip{align-items:flex-start;}
   .pchip .pname{font-weight:700;}
   .pchip .pmeta{color:var(--muted);font-size:0.85em;}
-  .pchip .ptotal{font-variant-numeric:tabular-nums;font-weight:700;}
+  .pchip .pguesses{color:var(--muted);font-size:0.78em;margin-top:4px;}
+  .pchip .ptotal{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;padding-left:12px;}
   .guess-box{display:flex;gap:8px;margin-top:6px;}
   .guess-box input{margin-bottom:0;}
   .suggestions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
@@ -96,7 +131,7 @@
 <body>
 <div class="wrap">
   <h1>🎯 Brain Darts</h1>
-  <div class="tagline">Guess your way down to zero. No login, no fuss — just you, your mates, and Wikidata.</div>
+  <div class="tagline">Get to Zero, Be a Hero</div>
 
   <!-- SETUP SCREEN -->
   <div id="setupScreen" class="card">
@@ -105,7 +140,7 @@
     <div class="topic-desc" id="topicDesc"></div>
 
     <label for="startingTotal">Starting total</label>
-    <input type="number" id="startingTotal" min="1" step="1">
+    <input type="text" inputmode="numeric" id="startingTotal" autocomplete="off">
     <div class="topic-desc" id="totalHint"></div>
 
     <label>Players</label>
@@ -136,21 +171,23 @@
       <span class="source-badge">📚 <span id="sourceLabel">Wikidata</span> — <a href="#" id="sourceLink" target="_blank" rel="noopener">view live data</a></span>
     </div>
 
+    <div id="banner" class="banner"></div>
+
     <div class="scoreboard" id="scoreboard"></div>
 
-    <div id="turnArea"></div>
-
-    <div style="margin-top:18px;">
-      <div style="font-weight:700;margin-bottom:8px;">Round log</div>
+    <div style="margin-bottom:18px;">
+      <div style="font-weight:700;margin-bottom:8px;">Commentary</div>
       <div class="log" id="log"></div>
     </div>
+
+    <div id="turnArea"></div>
   </div>
 
   <!-- RESULTS SCREEN -->
   <div id="resultsScreen" class="card hidden">
     <div class="winner-banner" id="winnerBanner"></div>
     <table class="results-table">
-      <thead><tr><th>Player</th><th>Guesses used</th><th>Result</th><th>Final gap</th></tr></thead>
+      <thead><tr><th>Player</th><th>Guesses used</th><th>Result</th><th>Final gap (%)</th></tr></thead>
       <tbody id="resultsBody"></tbody>
     </table>
     <div style="margin-top:18px;display:flex;gap:10px;">
@@ -174,7 +211,7 @@
   const TOPICS = [
     {
       id: "capital_population",
-      label: "Capital city populations",
+      label: "Capital City Populations",
       unit: "people",
       suggestedTotal: 10000000,
       desc: "Population of national capital cities. Source: Wikidata P1082 (population) on each country's P36 (capital).",
@@ -189,7 +226,7 @@ LIMIT 300`
     },
     {
       id: "country_population",
-      label: "Country populations",
+      label: "Country Populations",
       unit: "people",
       suggestedTotal: 500000000,
       desc: "Population of countries. Source: Wikidata P1082 (population) on items that are instances of Q6256 (country).",
@@ -202,70 +239,104 @@ ORDER BY DESC(?value)
 LIMIT 300`
     },
     {
-      id: "country_area",
-      label: "Country land area (km²)",
-      unit: "km²",
-      suggestedTotal: 5000000,
-      desc: "Land area of countries in square kilometres. Source: Wikidata P2046 (area) on items that are instances of Q6256 (country).",
-      query: `SELECT ?itemLabel ?value WHERE {
-  ?item wdt:P31 wd:Q6256 .
-  ?item wdt:P2046 ?value .
+      id: "pl_appearances",
+      label: "Premier League Player Appearances",
+      unit: "appearances",
+      suggestedTotal: 1500,
+      desc: "Total Premier League appearances per player, summed across every spell in the competition. Source: Wikidata P1350 (matches played) qualifier on P54 (team membership) statements, filtered to P118 (league) = Premier League. Note: coverage depends on how thoroughly each player's Wikidata entry has been filled in, so some counts may be missing or incomplete — treat this one as less exhaustive than the geography topics.",
+      query: `SELECT ?item ?itemLabel (SUM(?apps) AS ?value) WHERE {
+  ?item p:P54 ?stmt .
+  ?stmt pq:P1350 ?apps .
+  ?stmt pq:P118 wd:Q9448 .
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
+GROUP BY ?item ?itemLabel
 ORDER BY DESC(?value)
 LIMIT 300`
     },
     {
-      id: "mountain_elevation",
-      label: "Mountain elevation (m)",
-      unit: "m",
-      suggestedTotal: 20000,
-      desc: "Elevation above sea level, in metres. Source: Wikidata P2044 on items that are instances (or subclasses) of Q8502 (mountain).",
-      query: `SELECT ?itemLabel ?value WHERE {
-  ?item wdt:P31/wdt:P279* wd:Q8502 .
-  ?item wdt:P2044 ?value .
+      id: "intl_caps",
+      label: "International Football Player Appearances",
+      unit: "caps",
+      suggestedTotal: 1000,
+      desc: "Total international caps per player. Source: Wikidata P1129 (national team caps) qualifier on P54 (team membership) statements, filtered to teams that are instances of Q6979593 (national association football team). Same caveat as Premier League appearances: data completeness varies by player.",
+      query: `SELECT ?item ?itemLabel (SUM(?caps) AS ?value) WHERE {
+  ?item p:P54 ?stmt .
+  ?stmt ps:P54 ?team .
+  ?stmt pq:P1129 ?caps .
+  ?team wdt:P31 wd:Q6979593 .
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
+GROUP BY ?item ?itemLabel
 ORDER BY DESC(?value)
 LIMIT 300`
     },
     {
-      id: "river_length",
-      label: "River length (km)",
+      id: "uk_driving_distance",
+      label: "Distances by Car (UK)",
       unit: "km",
-      suggestedTotal: 10000,
-      desc: "Length in kilometres. Source: Wikidata P2043 on items that are instances (or subclasses) of Q4022 (river).",
-      query: `SELECT ?itemLabel ?value WHERE {
-  ?item wdt:P31/wdt:P279* wd:Q4022 .
-  ?item wdt:P2043 ?value .
+      suggestedTotal: 1000,
+      fetchType: "uk_driving_distance",
+      anchor: { label: "London", lat: 51.5074, lon: -0.1278 },
+      desc: "Driving distance by road from London to UK cities and towns (population over 15,000), in kilometres. Two sources combined: Wikidata (P625 coordinates) for the list of places, and OSRM/OpenStreetMap's free public routing service to compute the actual road distance — Wikidata itself has no driving-distance data.",
+      query: `SELECT ?itemLabel ?lat ?lon WHERE {
+  ?item wdt:P31/wdt:P279* wd:Q486972 .
+  ?item wdt:P17 wd:Q145 .
+  ?item p:P625/psv:P625 ?coordNode .
+  ?coordNode wikibase:geoLatitude ?lat .
+  ?coordNode wikibase:geoLongitude ?lon .
+  ?item wdt:P1082 ?pop .
+  FILTER(?pop > 15000)
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
-ORDER BY DESC(?value)
+ORDER BY DESC(?pop)
+LIMIT 150`
+    },
+    {
+      id: "flight_distance",
+      label: "Flight Distance (International, km)",
+      unit: "km",
+      suggestedTotal: 40000,
+      fetchType: "greatcircle_distance",
+      anchor: { label: "London", lat: 51.5074, lon: -0.1278 },
+      desc: "Great-circle (\"as the crow flies\") distance from London to major world cities (population over 300,000), in kilometres. Source: Wikidata P625 coordinates, distance computed with the standard haversine formula. This is straight-line distance, not a real flight route, so actual flight distances run a little longer.",
+      query: `SELECT ?itemLabel ?lat ?lon WHERE {
+  ?item wdt:P31/wdt:P279* wd:Q515 .
+  ?item p:P625/psv:P625 ?coordNode .
+  ?coordNode wikibase:geoLatitude ?lat .
+  ?coordNode wikibase:geoLongitude ?lon .
+  ?item wdt:P1082 ?pop .
+  FILTER(?pop > 300000)
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+ORDER BY DESC(?pop)
 LIMIT 300`
     },
     {
-      id: "lake_area",
-      label: "Lake area (km²)",
-      unit: "km²",
-      suggestedTotal: 100000,
-      desc: "Surface area in square kilometres. Source: Wikidata P2046 on items that are instances (or subclasses) of Q23397 (lake).",
-      query: `SELECT ?itemLabel ?value WHERE {
-  ?item wdt:P31/wdt:P279* wd:Q23397 .
-  ?item wdt:P2046 ?value .
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
-}
-ORDER BY DESC(?value)
-LIMIT 300`
-    },
-    {
-      id: "island_area",
-      label: "Island area (km²)",
-      unit: "km²",
+      id: "animal_weight",
+      label: "Animal Weight (kg)",
+      unit: "kg",
       suggestedTotal: 500000,
-      desc: "Surface area in square kilometres. Source: Wikidata P2046 on items that are instances (or subclasses) of Q23442 (island).",
+      desc: "Typical body mass in kilograms. Source: Wikidata P2067 (mass) on items ranked as species (P105 = Q7432) within Animalia (P171 parent-taxon chain reaches Q729).",
       query: `SELECT ?itemLabel ?value WHERE {
-  ?item wdt:P31/wdt:P279* wd:Q23442 .
-  ?item wdt:P2046 ?value .
+  ?item wdt:P105 wd:Q7432 .
+  ?item wdt:P171* wd:Q729 .
+  ?item wdt:P2067 ?value .
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+ORDER BY DESC(?value)
+LIMIT 300`
+    },
+    {
+      id: "uk_stadium_capacity",
+      label: "UK Football Stadium Sizes",
+      unit: "seats",
+      suggestedTotal: 300000,
+      desc: "Maximum capacity of stadiums in the UK. Source: Wikidata P1083 (capacity) on items that are instances (or subclasses) of Q483110 (stadium), located in Q145 (United Kingdom).",
+      query: `SELECT ?itemLabel ?value WHERE {
+  ?item wdt:P31/wdt:P279* wd:Q483110 .
+  ?item wdt:P17 wd:Q145 .
+  ?item wdt:P1083 ?value .
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 ORDER BY DESC(?value)
@@ -348,8 +419,23 @@ LIMIT 300`
   function onTopicChange(){
     const t = TOPICS.find(x => x.id === el("topicSelect").value);
     el("topicDesc").textContent = t.desc;
-    el("startingTotal").value = t.suggestedTotal;
+    el("startingTotal").value = fmtNumber(t.suggestedTotal);
     el("totalHint").textContent = `Suggested starting total for this topic: ${fmtValue(t.suggestedTotal, t.unit)}. Feel free to change it.`;
+  }
+
+  function attachCommaFormatting(inputEl){
+    inputEl.addEventListener("input", () => {
+      const cursorFromEnd = inputEl.value.length - inputEl.selectionStart;
+      const digits = inputEl.value.replace(/[^\d]/g,"");
+      const formatted = digits ? Number(digits).toLocaleString("en-GB") : "";
+      inputEl.value = formatted;
+      const pos = Math.max(0, formatted.length - cursorFromEnd);
+      inputEl.setSelectionRange(pos,pos);
+    });
+  }
+
+  function parseStartingTotal(){
+    return parseFloat(el("startingTotal").value.replace(/,/g,""));
   }
 
   function addPlayerRow(name){
@@ -372,6 +458,7 @@ LIMIT 300`
 
   function initSetup(){
     populateTopicSelect();
+    attachCommaFormatting(el("startingTotal"));
     addPlayerRow("");
     addPlayerRow("");
     el("addPlayerBtn").addEventListener("click", () => addPlayerRow(""));
@@ -382,7 +469,7 @@ LIMIT 300`
     const errBox = el("setupErr");
     errBox.innerHTML = "";
     const names = getPlayerNames();
-    const total = parseFloat(el("startingTotal").value);
+    const total = parseStartingTotal();
 
     if(names.length < 2){
       errBox.innerHTML = `<div class="err">Add at least two players to get a game going.</div>`;
@@ -411,59 +498,141 @@ LIMIT 300`
   }
 
   // ---------- Data fetch ----------
-  function fetchDataset(topic, attempt){
-    attempt = attempt || 1;
-    const url = new URL(WDQS);
-    url.search = new URLSearchParams({ query: topic.query, format: "json" }).toString();
+  const OSRM_TABLE = "https://router.project-osrm.org/table/v1/driving/";
 
-    fetch(url.toString(), {
+  function fetchWikidataJson(query){
+    const url = new URL(WDQS);
+    url.search = new URLSearchParams({ query: query, format: "json" }).toString();
+    return fetch(url.toString(), {
       method: "GET",
       headers: { "Accept": "application/sparql-results+json" }
-    })
-    .then(r => {
+    }).then(r => {
       if(!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
-    })
-    .then(json => {
-      const bindings = (json.results && json.results.bindings) || [];
-      const seen = new Set();
-      const dataset = [];
-      bindings.forEach(b => {
-        const label = b.itemLabel && b.itemLabel.value;
-        const rawVal = b.value && b.value.value;
-        if(!label || rawVal === undefined) return;
-        const value = parseFloat(rawVal);
-        if(isNaN(value)) return;
-        const norm = normalize(label);
-        if(seen.has(norm)) return; // de-dupe same-named entities, keep first (highest value, since query is ORDER BY DESC)
-        seen.add(norm);
-        dataset.push({ label, norm, value });
+    });
+  }
+
+  function dedupeDataset(entries){
+    const seen = new Set();
+    const dataset = [];
+    entries.forEach(e => {
+      if(seen.has(e.norm)) return;
+      seen.add(e.norm);
+      dataset.push(e);
+    });
+    return dataset;
+  }
+
+  function haversineKm(lat1, lon1, lat2, lon2){
+    const R = 6371;
+    const toRad = d => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  function parseSimpleBindings(json){
+    const bindings = (json.results && json.results.bindings) || [];
+    const entries = [];
+    bindings.forEach(b => {
+      const label = b.itemLabel && b.itemLabel.value;
+      const rawVal = b.value && b.value.value;
+      if(!label || rawVal === undefined) return;
+      const value = parseFloat(rawVal);
+      if(isNaN(value)) return;
+      entries.push({ label, norm: normalize(label), value });
+    });
+    return dedupeDataset(entries); // keeps first occurrence, which is the highest value since ORDER BY DESC
+  }
+
+  function parseCoordBindings(json){
+    const bindings = (json.results && json.results.bindings) || [];
+    const entries = [];
+    bindings.forEach(b => {
+      const label = b.itemLabel && b.itemLabel.value;
+      const lat = b.lat && parseFloat(b.lat.value);
+      const lon = b.lon && parseFloat(b.lon.value);
+      if(!label || isNaN(lat) || isNaN(lon)) return;
+      entries.push({ label, norm: normalize(label), lat, lon });
+    });
+    return dedupeDataset(entries);
+  }
+
+  function fetchDataset(topic, attempt){
+    attempt = attempt || 1;
+    const fetchType = topic.fetchType || "wikidata";
+    let work;
+
+    if(fetchType === "wikidata"){
+      work = fetchWikidataJson(topic.query).then(json => {
+        const dataset = parseSimpleBindings(json);
+        if(dataset.length < 5) throw new Error("Wikidata returned too little usable data for this topic.");
+        return { dataset, sourceNote: "https://query.wikidata.org/#" + encodeURIComponent(topic.query) };
       });
-      if(dataset.length < 5){
-        throw new Error("Wikidata returned too little usable data for this topic.");
-      }
+    } else if(fetchType === "greatcircle_distance"){
+      work = fetchWikidataJson(topic.query).then(json => {
+        const places = parseCoordBindings(json);
+        if(places.length < 5) throw new Error("Wikidata returned too little usable data for this topic.");
+        const dataset = places
+          .filter(p => p.norm !== normalize(topic.anchor.label))
+          .map(p => ({ label: p.label, norm: p.norm, value: haversineKm(topic.anchor.lat, topic.anchor.lon, p.lat, p.lon) }));
+        return { dataset, sourceNote: "https://query.wikidata.org/#" + encodeURIComponent(topic.query) };
+      });
+    } else if(fetchType === "uk_driving_distance"){
+      work = fetchWikidataJson(topic.query).then(json => {
+        const places = parseCoordBindings(json).filter(p => p.norm !== normalize(topic.anchor.label));
+        if(places.length < 5) throw new Error("Wikidata returned too little usable data for this topic.");
+        const coordStr = [`${topic.anchor.lon},${topic.anchor.lat}`]
+          .concat(places.map(p => `${p.lon},${p.lat}`))
+          .join(";");
+        const osrmUrl = `${OSRM_TABLE}${coordStr}?sources=0&annotations=distance`;
+        return fetch(osrmUrl).then(r => {
+          if(!r.ok) throw new Error("HTTP " + r.status + " from the routing service");
+          return r.json();
+        }).then(osrmJson => {
+          if(osrmJson.code !== "Ok" || !osrmJson.distances || !osrmJson.distances[0]){
+            throw new Error("The routing service couldn't compute driving distances for this round.");
+          }
+          const row = osrmJson.distances[0];
+          const dataset = [];
+          places.forEach((p, i) => {
+            const meters = row[i+1];
+            if(typeof meters === "number"){
+              dataset.push({ label: p.label, norm: p.norm, value: meters / 1000 });
+            }
+          });
+          if(dataset.length < 5) throw new Error("Not enough driving-distance results came back for this round.");
+          return { dataset, sourceNote: "https://query.wikidata.org/#" + encodeURIComponent(topic.query) };
+        });
+      });
+    } else {
+      work = Promise.reject(new Error("Unknown topic type."));
+    }
+
+    work.then(({ dataset, sourceNote }) => {
       state.dataset = dataset;
-      state.queryUrlHuman = "https://query.wikidata.org/#" + encodeURIComponent(topic.query);
+      state.queryUrlHuman = sourceNote;
       startGameScreen();
     })
     .catch(err => {
       if(attempt < 2){
-        // one silent retry — WDQS occasionally hiccups on first request
+        // one silent retry — public services occasionally hiccup on first request
         setTimeout(() => fetchDataset(topic, attempt+1), 1200);
         return;
       }
-      el("loadingMsg").textContent = "Couldn't load data from Wikidata.";
+      el("loadingMsg").textContent = "Couldn't load data for this round.";
       const isFileProtocol = (typeof window !== "undefined" && window.location && window.location.protocol === "file:");
       const explanation = isFileProtocol
         ? `You opened this file directly (the address bar starts with <code>file://</code>). Browsers block live data requests from files opened that way, for security reasons — it's not a bug in the game.<br><br>
-           Fix: run the included <strong>Start Brain Darts</strong> script instead of double-clicking the HTML file. It serves the page properly so the Wikidata lookups can work.`
-        : `${escapeHtml(err.message)}<br><br>This usually means either your internet connection dropped, or Wikidata's query service is temporarily down. Check your connection and try again — nothing has been lost.`;
+           Fix: run the included <strong>Start Brain Darts</strong> script instead of double-clicking the HTML file. It serves the page properly so the lookups can work.`
+        : `${escapeHtml(err.message)}<br><br>This usually means either your internet connection dropped, or one of the public services this topic relies on (Wikidata, or for driving-distance topics, the OSRM routing service) is temporarily down. Check your connection and try again — nothing has been lost.`;
       el("loadingErr").innerHTML = `<div class="err">${explanation}</div>
       <button class="btn secondary small" id="retryBtn" type="button" style="margin-top:8px;">Try again</button>
       <button class="btn secondary small" id="backBtn" type="button" style="margin-top:8px;">Back to setup</button>`;
       el("retryBtn").addEventListener("click", () => {
         el("loadingErr").innerHTML = "";
-        el("loadingMsg").textContent = "Fetching reliable data from Wikidata…";
+        el("loadingMsg").textContent = "Fetching reliable data…";
         fetchDataset(topic, 1);
       });
       el("backBtn").addEventListener("click", () => {
@@ -498,8 +667,11 @@ LIMIT 300`
       if(p.busted) cls.push("busted");
       else if(p.finished) cls.push("done");
       const status = p.busted ? "BUSTED" : (p.finished ? "finished" : `${MAX_GUESSES - p.guesses.length} left`);
+      const guessesList = p.guesses.length
+        ? `<div class="pguesses">${p.guesses.map(g => escapeHtml(g.label)).join(", ")}</div>`
+        : "";
       return `<div class="${cls.join(" ")}">
-        <div><div class="pname">${escapeHtml(p.name)}</div><div class="pmeta">${status}</div></div>
+        <div><div class="pname">${escapeHtml(p.name)}</div><div class="pmeta">${status}</div>${guessesList}</div>
         <div class="ptotal">${p.busted ? "—" : fmtValue(p.remaining, state.topic.unit)}</div>
       </div>`;
     }).join("");
@@ -606,6 +778,19 @@ LIMIT 300`
 
   function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 
+  let bannerTimer = null;
+  function showBanner(type, text){
+    const b = el("banner");
+    clearTimeout(bannerTimer);
+    b.classList.remove("show","good","bust","win");
+    void b.offsetWidth; // force reflow so the animation restarts every time
+    b.textContent = text;
+    b.classList.add("show", type);
+    bannerTimer = setTimeout(() => {
+      b.classList.remove("show","good","bust","win");
+    }, 1650);
+  }
+
   function applyGuess(player, entity, rawGuess){
     el("suggestBox").innerHTML = "";
     el("guessInput").value = "";
@@ -629,11 +814,13 @@ LIMIT 300`
       const over = fmtValue(Math.abs(newRemaining), state.topic.unit);
       text = pick(BUST_TEMPLATES)(player.name, entity.label, valueStr, over);
       logClass = "bust";
+      showBanner("bust", `💥 BUST — ${player.name}!`);
     } else if(newRemaining === 0){
       player.remaining = 0;
       player.finished = true;
       text = pick(WIN_TEMPLATES)(player.name, entity.label, valueStr);
       logClass = "win";
+      showBanner("win", `🏆 PERFECT — ${player.name} hits zero!`);
     } else {
       player.remaining = newRemaining;
       if(player.guesses.length >= MAX_GUESSES){
@@ -645,6 +832,7 @@ LIMIT 300`
       if(player.finished){
         text += ` That's all ${MAX_GUESSES} guesses used.`;
       }
+      showBanner("good", `✅ Nice guess, ${player.name}!`);
     }
 
     addLogEntry(text, logClass);
@@ -679,8 +867,8 @@ LIMIT 300`
 
     el("resultsBody").innerHTML = state.players.map(p => {
       const result = p.busted ? "Busted" : (winner && p.name===winner.name ? "Winner 🏆" : "Survived");
-      const gap = p.busted ? "—" : fmtValue(p.remaining, state.topic.unit);
-      return `<tr><td>${escapeHtml(p.name)}</td><td>${p.guesses.length}</td><td>${result}</td><td>${gap}</td></tr>`;
+      const gapPct = p.busted ? "—" : `${((p.remaining / state.startingTotal) * 100).toFixed(2)}%`;
+      return `<tr><td>${escapeHtml(p.name)}</td><td>${p.guesses.length}</td><td>${result}</td><td>${gapPct}</td></tr>`;
     }).join("");
   }
 
