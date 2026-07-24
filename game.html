@@ -245,19 +245,24 @@ LIMIT 50`
       label: "Premier League Player Appearances",
       unit: "appearances",
       suggestedTotal: 1500,
-      searchType: "wikidata",
-      desc: "Total Premier League appearances per player, summed across every spell at a club currently in the Premier League. Source: Wikidata P1350 (matches played) qualifier on P54 (team membership) statements, where the club itself (P118) plays in the Premier League. Coverage depends on how thoroughly a player's Wikidata entry is filled in, and misses spells at clubs no longer in the top flight — treat this as less exhaustive than the geography topics.",
-      searchQuery: (text) => `SELECT ?itemLabel (SUM(?apps) AS ?value) WHERE {
-  ?item p:P54 ?stmt .
-  ?stmt ps:P54 ?club .
-  ?stmt pq:P1350 ?apps .
-  ?club wdt:P118 wd:Q9448 .
+      searchType: "wikidata_two_step",
+      desc: "Total Premier League appearances per player, summed across every spell at a club currently in the Premier League. Source: Wikidata P1350 (matches played) qualifier on P54 (team membership) statements, where the club itself (P118) plays in the Premier League. Looked up in two steps (find the player, then total just their record) so the search itself stays fast. Coverage depends on how thoroughly a player's Wikidata entry is filled in, and misses spells at clubs no longer in the top flight — treat this as less exhaustive than the geography topics.",
+      step1Query: (text) => `SELECT ?item ?itemLabel WHERE {
+  ?item wdt:P106 wd:Q937857 .
   ?item rdfs:label ?rawLabel . FILTER(LANG(?rawLabel) = "en")
   FILTER(CONTAINS(LCASE(?rawLabel), "${text}"))
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
-GROUP BY ?itemLabel
-LIMIT 8`,
+LIMIT 6`,
+      step2Query: (valuesClause) => `SELECT ?item ?itemLabel (SUM(?apps) AS ?value) WHERE {
+  VALUES ?item { ${valuesClause} }
+  ?item p:P54 ?stmt .
+  ?stmt ps:P54 ?club .
+  ?stmt pq:P1350 ?apps .
+  ?club wdt:P118 wd:Q9448 .
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+GROUP BY ?item ?itemLabel`,
       exampleQuery: `SELECT ?itemLabel (SUM(?apps) AS ?value) WHERE {
   ?item p:P54 ?stmt .
   ?stmt ps:P54 ?club .
@@ -274,19 +279,24 @@ LIMIT 50`
       label: "International Football Player Appearances",
       unit: "caps",
       suggestedTotal: 1000,
-      searchType: "wikidata",
-      desc: "Total international caps per player. Source: Wikidata P1129 (national team caps) qualifier on P54 (team membership) statements, filtered to teams that are instances of Q6979593 (national association football team). Same caveat as Premier League appearances: data completeness varies by player.",
-      searchQuery: (text) => `SELECT ?itemLabel (SUM(?caps) AS ?value) WHERE {
-  ?item p:P54 ?stmt .
-  ?stmt ps:P54 ?team .
-  ?stmt pq:P1129 ?caps .
-  ?team wdt:P31 wd:Q6979593 .
+      searchType: "wikidata_two_step",
+      desc: "Total international caps per player. Source: Wikidata P1129 (national team caps) qualifier on P54 (team membership) statements, filtered to teams that are instances of Q6979593 (national association football team). Looked up in two steps, same as Premier League appearances. Same caveat too: data completeness varies by player.",
+      step1Query: (text) => `SELECT ?item ?itemLabel WHERE {
+  ?item wdt:P106 wd:Q937857 .
   ?item rdfs:label ?rawLabel . FILTER(LANG(?rawLabel) = "en")
   FILTER(CONTAINS(LCASE(?rawLabel), "${text}"))
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
-GROUP BY ?itemLabel
-LIMIT 8`,
+LIMIT 6`,
+      step2Query: (valuesClause) => `SELECT ?item ?itemLabel (SUM(?caps) AS ?value) WHERE {
+  VALUES ?item { ${valuesClause} }
+  ?item p:P54 ?stmt .
+  ?stmt ps:P54 ?team .
+  ?stmt pq:P1129 ?caps .
+  ?team wdt:P31 wd:Q6979593 .
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+GROUP BY ?item ?itemLabel`,
       exampleQuery: `SELECT ?itemLabel (SUM(?caps) AS ?value) WHERE {
   ?item p:P54 ?stmt .
   ?stmt ps:P54 ?team .
@@ -659,6 +669,29 @@ LIMIT 50`
       return fetchWikidataJson(topic.searchQuery(escaped)).then(json =>
         parseCoordBindings(json).filter(p => p.norm !== normalize(topic.anchor.label))
       );
+    }
+    if(topic.searchType === "wikidata_two_step"){
+      // Step 1: find matching people cheaply (plain type + name filter, no aggregation).
+      // Step 2: total up just those few candidates, scoped with VALUES so the
+      // aggregation never has to scan the whole relation — keeps it fast.
+      return fetchWikidataJson(topic.step1Query(escaped)).then(json => {
+        const bindings = (json.results && json.results.bindings) || [];
+        const people = [];
+        const seenIris = new Set();
+        bindings.forEach(b => {
+          const iri = b.item && b.item.value;
+          const label = b.itemLabel && b.itemLabel.value;
+          if(!iri || !label || seenIris.has(iri)) return;
+          seenIris.add(iri);
+          people.push({ iri, label });
+        });
+        if(people.length === 0) return [];
+        const valuesClause = people.map(p => `<${p.iri}>`).join(" ");
+        return fetchWikidataJson(topic.step2Query(valuesClause)).then(json2 => {
+          const dataset = parseSimpleBindings(json2);
+          return dataset;
+        });
+      });
     }
     return Promise.reject(new Error("Unknown topic type."));
   }
