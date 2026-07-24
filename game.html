@@ -154,13 +154,6 @@
     </div>
   </div>
 
-  <!-- LOADING SCREEN -->
-  <div id="loadingScreen" class="card hidden center">
-    <div class="spinner"></div>
-    <div id="loadingMsg" class="muted">Fetching reliable data from Wikidata…</div>
-    <div id="loadingErr"></div>
-  </div>
-
   <!-- GAME SCREEN -->
   <div id="gameScreen" class="card hidden">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
@@ -206,136 +199,210 @@
   "use strict";
 
   // ---------- Topic definitions ----------
-  // Every query uses the standard, publicly-documented Wikidata SPARQL patterns
-  // (wdt:P31/wdt:P279* for type, direct wdt: property for the numeric fact).
+  // Every topic is looked up LIVE, per guess, rather than pre-fetching a
+  // ranked top-N list. searchQuery(text) builds a query scoped to just the
+  // typed name, so coverage no longer depends on how something ranks —
+  // it just has to exist and match. exampleQuery is a broader, unfiltered
+  // version used only for the "view live data" transparency link.
   const TOPICS = [
     {
       id: "capital_population",
       label: "Capital City Populations",
       unit: "people",
       suggestedTotal: 10000000,
-      desc: "Population of national capital cities. Source: Wikidata P1082 (population) on each country's P36 (capital).",
-      query: `SELECT ?itemLabel ?value WHERE {
+      searchType: "wikidata",
+      desc: "Population of national capital cities. Source: Wikidata P1082 (population) on each country's P36 (capital), looked up live for whatever city you type.",
+      searchQuery: (text) => `SELECT ?itemLabel ?value WHERE {
+  ?country wdt:P31 wd:Q6256 .
+  ?country wdt:P36 ?item .
+  ?item wdt:P1082 ?value .
+  ?item rdfs:label ?rawLabel . FILTER(LANG(?rawLabel) = "en")
+  FILTER(CONTAINS(LCASE(?rawLabel), "${text}"))
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+LIMIT 8`,
+      exampleQuery: `SELECT ?itemLabel ?value WHERE {
   ?country wdt:P31 wd:Q6256 .
   ?country wdt:P36 ?item .
   ?item wdt:P1082 ?value .
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 ORDER BY DESC(?value)
-LIMIT 300`
+LIMIT 50`
     },
     {
       id: "country_population",
       label: "Country Populations",
       unit: "people",
       suggestedTotal: 500000000,
-      fetchType: "rest_countries",
-      desc: "Population of every country. Source: the REST Countries API (restcountries.com), a free public reference dataset built specifically for country data — simpler and more consistent than reconstructing this from a general knowledge graph.",
-      restUrl: "https://restcountries.com/v3.1/all?fields=name,population"
+      searchType: "rest_countries",
+      desc: "Population of every country. Source: the REST Countries API (restcountries.com), a free public reference dataset built specifically for country data, searched live by name.",
+      restSearchUrl: (text) => `https://restcountries.com/v3.1/name/${encodeURIComponent(text)}?fields=name,population`,
+      exampleUrl: "https://restcountries.com/v3.1/all?fields=name,population"
     },
     {
       id: "pl_appearances",
       label: "Premier League Player Appearances",
       unit: "appearances",
       suggestedTotal: 1500,
-      desc: "Total Premier League appearances per player, summed across every spell in the competition. Source: Wikidata P1350 (matches played) qualifier on P54 (team membership) statements, filtered to P118 (league) = Premier League. Note: coverage depends on how thoroughly each player's Wikidata entry has been filled in, so some counts may be missing or incomplete — treat this one as less exhaustive than the geography topics.",
-      query: `SELECT ?item ?itemLabel (SUM(?apps) AS ?value) WHERE {
+      searchType: "wikidata",
+      desc: "Total Premier League appearances per player, summed across every spell at a club currently in the Premier League. Source: Wikidata P1350 (matches played) qualifier on P54 (team membership) statements, where the club itself (P118) plays in the Premier League. Coverage depends on how thoroughly a player's Wikidata entry is filled in, and misses spells at clubs no longer in the top flight — treat this as less exhaustive than the geography topics.",
+      searchQuery: (text) => `SELECT ?itemLabel (SUM(?apps) AS ?value) WHERE {
   ?item p:P54 ?stmt .
+  ?stmt ps:P54 ?club .
   ?stmt pq:P1350 ?apps .
-  ?stmt pq:P118 wd:Q9448 .
+  ?club wdt:P118 wd:Q9448 .
+  ?item rdfs:label ?rawLabel . FILTER(LANG(?rawLabel) = "en")
+  FILTER(CONTAINS(LCASE(?rawLabel), "${text}"))
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
-GROUP BY ?item ?itemLabel
+GROUP BY ?itemLabel
+LIMIT 8`,
+      exampleQuery: `SELECT ?itemLabel (SUM(?apps) AS ?value) WHERE {
+  ?item p:P54 ?stmt .
+  ?stmt ps:P54 ?club .
+  ?stmt pq:P1350 ?apps .
+  ?club wdt:P118 wd:Q9448 .
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+GROUP BY ?itemLabel
 ORDER BY DESC(?value)
-LIMIT 600`
+LIMIT 50`
     },
     {
       id: "intl_caps",
       label: "International Football Player Appearances",
       unit: "caps",
       suggestedTotal: 1000,
+      searchType: "wikidata",
       desc: "Total international caps per player. Source: Wikidata P1129 (national team caps) qualifier on P54 (team membership) statements, filtered to teams that are instances of Q6979593 (national association football team). Same caveat as Premier League appearances: data completeness varies by player.",
-      query: `SELECT ?item ?itemLabel (SUM(?caps) AS ?value) WHERE {
+      searchQuery: (text) => `SELECT ?itemLabel (SUM(?caps) AS ?value) WHERE {
+  ?item p:P54 ?stmt .
+  ?stmt ps:P54 ?team .
+  ?stmt pq:P1129 ?caps .
+  ?team wdt:P31 wd:Q6979593 .
+  ?item rdfs:label ?rawLabel . FILTER(LANG(?rawLabel) = "en")
+  FILTER(CONTAINS(LCASE(?rawLabel), "${text}"))
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+GROUP BY ?itemLabel
+LIMIT 8`,
+      exampleQuery: `SELECT ?itemLabel (SUM(?caps) AS ?value) WHERE {
   ?item p:P54 ?stmt .
   ?stmt ps:P54 ?team .
   ?stmt pq:P1129 ?caps .
   ?team wdt:P31 wd:Q6979593 .
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
-GROUP BY ?item ?itemLabel
+GROUP BY ?itemLabel
 ORDER BY DESC(?value)
-LIMIT 600`
+LIMIT 50`
     },
     {
       id: "uk_driving_distance",
       label: "Distances by Car (UK)",
       unit: "km",
       suggestedTotal: 1000,
-      fetchType: "uk_driving_distance",
+      searchType: "driving_distance",
       anchor: { label: "London", lat: 51.5074, lon: -0.1278 },
-      desc: "Driving distance by road from London to UK cities and towns (population over 5,000), in kilometres. Two sources combined: Wikidata (P625 coordinates) for the list of places, and OSRM/OpenStreetMap's free public routing service to compute the actual road distance — Wikidata itself has no driving-distance data.",
-      query: `SELECT ?itemLabel ?lat ?lon WHERE {
+      desc: "Driving distance by road from London to whatever UK place you type. Two sources combined, looked up live: Wikidata (P625 coordinates) to find the place, and OSRM/OpenStreetMap's free public routing service to compute the actual road distance — Wikidata itself has no driving-distance data.",
+      searchQuery: (text) => `SELECT ?itemLabel ?lat ?lon WHERE {
   ?item wdt:P31/wdt:P279* wd:Q486972 .
   ?item wdt:P17 wd:Q145 .
   ?item p:P625/psv:P625 ?coordNode .
   ?coordNode wikibase:geoLatitude ?lat .
   ?coordNode wikibase:geoLongitude ?lon .
-  ?item wdt:P1082 ?pop .
-  FILTER(?pop > 5000)
+  ?item rdfs:label ?rawLabel . FILTER(LANG(?rawLabel) = "en")
+  FILTER(CONTAINS(LCASE(?rawLabel), "${text}"))
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
-ORDER BY DESC(?pop)
-LIMIT 400`
+LIMIT 8`,
+      exampleQuery: `SELECT ?itemLabel ?lat ?lon WHERE {
+  ?item wdt:P31/wdt:P279* wd:Q486972 .
+  ?item wdt:P17 wd:Q145 .
+  ?item p:P625/psv:P625 ?coordNode .
+  ?coordNode wikibase:geoLatitude ?lat .
+  ?coordNode wikibase:geoLongitude ?lon .
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+LIMIT 50`
     },
     {
       id: "flight_distance",
       label: "Flight Distance (International, km)",
       unit: "km",
       suggestedTotal: 40000,
-      fetchType: "greatcircle_distance",
+      searchType: "greatcircle",
       anchor: { label: "London", lat: 51.5074, lon: -0.1278 },
-      desc: "Great-circle (\"as the crow flies\") distance from London to major world cities (population over 100,000), in kilometres. Source: Wikidata P625 coordinates, distance computed with the standard haversine formula. This is straight-line distance, not a real flight route, so actual flight distances run a little longer.",
-      query: `SELECT ?itemLabel ?lat ?lon WHERE {
+      desc: "Great-circle (\"as the crow flies\") distance from London to whatever city you type, in kilometres. Source: Wikidata P625 coordinates, distance computed live with the standard haversine formula. This is straight-line distance, not a real flight route, so actual flight distances run a little longer.",
+      searchQuery: (text) => `SELECT ?itemLabel ?lat ?lon WHERE {
   ?item wdt:P31/wdt:P279* wd:Q515 .
   ?item p:P625/psv:P625 ?coordNode .
   ?coordNode wikibase:geoLatitude ?lat .
   ?coordNode wikibase:geoLongitude ?lon .
-  ?item wdt:P1082 ?pop .
-  FILTER(?pop > 100000)
+  ?item rdfs:label ?rawLabel . FILTER(LANG(?rawLabel) = "en")
+  FILTER(CONTAINS(LCASE(?rawLabel), "${text}"))
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
-ORDER BY DESC(?pop)
-LIMIT 500`
+LIMIT 8`,
+      exampleQuery: `SELECT ?itemLabel ?lat ?lon WHERE {
+  ?item wdt:P31/wdt:P279* wd:Q515 .
+  ?item p:P625/psv:P625 ?coordNode .
+  ?coordNode wikibase:geoLatitude ?lat .
+  ?coordNode wikibase:geoLongitude ?lon .
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+LIMIT 50`
     },
     {
       id: "animal_weight",
       label: "Animal Weight (kg)",
       unit: "kg",
       suggestedTotal: 500000,
-      desc: "Typical body mass in kilograms. Source: Wikidata P2067 (mass) on items ranked as species (P105 = Q7432) within Animalia (P171 parent-taxon chain reaches Q729). This topic has a very long tail of documented species by mass, so the round pulls a much larger sample (2,000 entries) to make sure common animals aren't crowded out by obscure heavier ones.",
-      query: `SELECT ?itemLabel ?value WHERE {
+      searchType: "wikidata",
+      desc: "Typical body mass in kilograms. Source: Wikidata P2067 (mass) on items ranked as species (P105 = Q7432) within Animalia (P171 parent-taxon chain reaches Q729), looked up live by name — so a common name like \"elephant\" matches any species with that word in its label (e.g. African bush elephant).",
+      searchQuery: (text) => `SELECT ?itemLabel ?value WHERE {
+  ?item wdt:P105 wd:Q7432 .
+  ?item wdt:P171* wd:Q729 .
+  ?item wdt:P2067 ?value .
+  ?item rdfs:label ?rawLabel . FILTER(LANG(?rawLabel) = "en")
+  FILTER(CONTAINS(LCASE(?rawLabel), "${text}"))
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+LIMIT 8`,
+      exampleQuery: `SELECT ?itemLabel ?value WHERE {
   ?item wdt:P105 wd:Q7432 .
   ?item wdt:P171* wd:Q729 .
   ?item wdt:P2067 ?value .
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 ORDER BY DESC(?value)
-LIMIT 2000`
+LIMIT 50`
     },
     {
       id: "uk_stadium_capacity",
       label: "UK Football Stadium Sizes",
       unit: "seats",
       suggestedTotal: 300000,
-      desc: "Maximum capacity of stadiums in the UK. Source: Wikidata P1083 (capacity) on items that are instances (or subclasses) of Q483110 (stadium), located in Q145 (United Kingdom).",
-      query: `SELECT ?itemLabel ?value WHERE {
+      searchType: "wikidata",
+      desc: "Maximum capacity of stadiums in the UK. Source: Wikidata P1083 (capacity) on items that are instances (or subclasses) of Q483110 (stadium), located in Q145 (United Kingdom), looked up live by name.",
+      searchQuery: (text) => `SELECT ?itemLabel ?value WHERE {
+  ?item wdt:P31/wdt:P279* wd:Q483110 .
+  ?item wdt:P17 wd:Q145 .
+  ?item wdt:P1083 ?value .
+  ?item rdfs:label ?rawLabel . FILTER(LANG(?rawLabel) = "en")
+  FILTER(CONTAINS(LCASE(?rawLabel), "${text}"))
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+LIMIT 8`,
+      exampleQuery: `SELECT ?itemLabel ?value WHERE {
   ?item wdt:P31/wdt:P279* wd:Q483110 .
   ?item wdt:P17 wd:Q145 .
   ?item wdt:P1083 ?value .
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 ORDER BY DESC(?value)
-LIMIT 500`
+LIMIT 50`
     }
   ];
 
@@ -345,7 +412,6 @@ LIMIT 500`
   // ---------- State ----------
   let state = {
     topic: null,
-    dataset: [],       // [{label, norm, value}]
     players: [],       // [{name, remaining, guesses:[], busted, finished}]
     turnOrder: [],
     currentIdx: 0,
@@ -487,13 +553,19 @@ LIMIT 500`
     state.currentIdx = 0;
 
     el("setupScreen").classList.add("hidden");
-    el("loadingScreen").classList.remove("hidden");
-    el("loadingErr").innerHTML = "";
-    fetchDataset(topic);
+    startGameScreen();
   }
 
-  // ---------- Data fetch ----------
-  const OSRM_TABLE = "https://router.project-osrm.org/table/v1/driving/";
+  // ---------- Live lookup engine ----------
+  // Every guess is resolved on demand against the topic's real source,
+  // scoped to just the name typed — no pre-fetched "top N" list, so
+  // coverage isn't limited by ranking, only by whether the thing exists
+  // and is spelled close enough to match.
+  const OSRM_ROUTE = "https://router.project-osrm.org/route/v1/driving/";
+
+  function sparqlEscape(s){
+    return String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  }
 
   function fetchWikidataJson(query){
     const url = new URL(WDQS);
@@ -507,15 +579,15 @@ LIMIT 500`
     });
   }
 
-  function dedupeDataset(entries){
+  function dedupeByNorm(entries){
     const seen = new Set();
-    const dataset = [];
+    const out = [];
     entries.forEach(e => {
       if(seen.has(e.norm)) return;
       seen.add(e.norm);
-      dataset.push(e);
+      out.push(e);
     });
-    return dataset;
+    return out;
   }
 
   function haversineKm(lat1, lon1, lat2, lon2){
@@ -538,7 +610,7 @@ LIMIT 500`
       if(isNaN(value)) return;
       entries.push({ label, norm: normalize(label), value });
     });
-    return dedupeDataset(entries); // keeps first occurrence, which is the highest value since ORDER BY DESC
+    return dedupeByNorm(entries);
   }
 
   function parseCoordBindings(json){
@@ -551,22 +623,25 @@ LIMIT 500`
       if(!label || isNaN(lat) || isNaN(lon)) return;
       entries.push({ label, norm: normalize(label), lat, lon });
     });
-    return dedupeDataset(entries);
+    return dedupeByNorm(entries);
   }
 
-  function fetchDataset(topic, attempt){
-    attempt = attempt || 1;
-    const fetchType = topic.fetchType || "wikidata";
-    let work;
+  // Resolves a typed guess to a short list of candidate entities.
+  // Candidates from "wikidata"/"rest_countries" already carry their final
+  // numeric value. Candidates from "greatcircle"/"driving_distance" carry
+  // lat/lon instead — finalizeCandidate() below computes the actual value
+  // once a specific one is confirmed.
+  function resolveGuess(topic, guessRaw){
+    const text = normalize(guessRaw).replace(/\s+/g, " ").trim();
+    if(!text) return Promise.resolve([]);
+    const escaped = sparqlEscape(text);
 
-    if(fetchType === "wikidata"){
-      work = fetchWikidataJson(topic.query).then(json => {
-        const dataset = parseSimpleBindings(json);
-        if(dataset.length < 5) throw new Error("Wikidata returned too little usable data for this topic.");
-        return { dataset, sourceNote: "https://query.wikidata.org/#" + encodeURIComponent(topic.query) };
-      });
-    } else if(fetchType === "rest_countries"){
-      work = fetch(topic.restUrl).then(r => {
+    if(topic.searchType === "wikidata"){
+      return fetchWikidataJson(topic.searchQuery(escaped)).then(parseSimpleBindings);
+    }
+    if(topic.searchType === "rest_countries"){
+      return fetch(topic.restSearchUrl(guessRaw)).then(r => {
+        if(r.status === 404) return [];
         if(!r.ok) throw new Error("HTTP " + r.status + " from the country data service");
         return r.json();
       }).then(json => {
@@ -577,91 +652,55 @@ LIMIT 500`
           if(!label || typeof value !== "number") return;
           entries.push({ label, norm: normalize(label), value });
         });
-        const dataset = dedupeDataset(entries).sort((a,b) => b.value - a.value);
-        if(dataset.length < 5) throw new Error("The country data service returned too little usable data.");
-        return { dataset, sourceNote: "https://restcountries.com/" };
+        return dedupeByNorm(entries);
       });
-    } else if(fetchType === "greatcircle_distance"){
-      work = fetchWikidataJson(topic.query).then(json => {
-        const places = parseCoordBindings(json);
-        if(places.length < 5) throw new Error("Wikidata returned too little usable data for this topic.");
-        const dataset = places
-          .filter(p => p.norm !== normalize(topic.anchor.label))
-          .map(p => ({ label: p.label, norm: p.norm, value: haversineKm(topic.anchor.lat, topic.anchor.lon, p.lat, p.lon) }));
-        return { dataset, sourceNote: "https://query.wikidata.org/#" + encodeURIComponent(topic.query) };
-      });
-    } else if(fetchType === "uk_driving_distance"){
-      work = fetchWikidataJson(topic.query).then(json => {
-        const places = parseCoordBindings(json).filter(p => p.norm !== normalize(topic.anchor.label));
-        if(places.length < 5) throw new Error("Wikidata returned too little usable data for this topic.");
-        const coordStr = [`${topic.anchor.lon},${topic.anchor.lat}`]
-          .concat(places.map(p => `${p.lon},${p.lat}`))
-          .join(";");
-        const osrmUrl = `${OSRM_TABLE}${coordStr}?sources=0&annotations=distance`;
-        return fetch(osrmUrl).then(r => {
-          if(!r.ok) throw new Error("HTTP " + r.status + " from the routing service");
-          return r.json();
-        }).then(osrmJson => {
-          if(osrmJson.code !== "Ok" || !osrmJson.distances || !osrmJson.distances[0]){
-            throw new Error("The routing service couldn't compute driving distances for this round.");
-          }
-          const row = osrmJson.distances[0];
-          const dataset = [];
-          places.forEach((p, i) => {
-            const meters = row[i+1];
-            if(typeof meters === "number"){
-              dataset.push({ label: p.label, norm: p.norm, value: meters / 1000 });
-            }
-          });
-          if(dataset.length < 5) throw new Error("Not enough driving-distance results came back for this round.");
-          return { dataset, sourceNote: "https://query.wikidata.org/#" + encodeURIComponent(topic.query) };
-        });
-      });
-    } else {
-      work = Promise.reject(new Error("Unknown topic type."));
     }
+    if(topic.searchType === "greatcircle" || topic.searchType === "driving_distance"){
+      return fetchWikidataJson(topic.searchQuery(escaped)).then(json =>
+        parseCoordBindings(json).filter(p => p.norm !== normalize(topic.anchor.label))
+      );
+    }
+    return Promise.reject(new Error("Unknown topic type."));
+  }
 
-    work.then(({ dataset, sourceNote }) => {
-      state.dataset = dataset;
-      state.queryUrlHuman = sourceNote;
-      startGameScreen();
-    })
-    .catch(err => {
-      if(attempt < 2){
-        // one silent retry — public services occasionally hiccup on first request
-        setTimeout(() => fetchDataset(topic, attempt+1), 1200);
-        return;
-      }
-      el("loadingMsg").textContent = "Couldn't load data for this round.";
-      const isFileProtocol = (typeof window !== "undefined" && window.location && window.location.protocol === "file:");
-      const explanation = isFileProtocol
-        ? `You opened this file directly (the address bar starts with <code>file://</code>). Browsers block live data requests from files opened that way, for security reasons — it's not a bug in the game.<br><br>
-           Fix: run the included <strong>Start Brain Darts</strong> script instead of double-clicking the HTML file. It serves the page properly so the lookups can work.`
-        : `${escapeHtml(err.message)}<br><br>This usually means either your internet connection dropped, or one of the public services this topic relies on (Wikidata, or for driving-distance topics, the OSRM routing service) is temporarily down. Check your connection and try again — nothing has been lost.`;
-      el("loadingErr").innerHTML = `<div class="err">${explanation}</div>
-      <button class="btn secondary small" id="retryBtn" type="button" style="margin-top:8px;">Try again</button>
-      <button class="btn secondary small" id="backBtn" type="button" style="margin-top:8px;">Back to setup</button>`;
-      el("retryBtn").addEventListener("click", () => {
-        el("loadingErr").innerHTML = "";
-        el("loadingMsg").textContent = "Fetching reliable data…";
-        fetchDataset(topic, 1);
+  // Given a chosen candidate, returns a Promise of its final numeric value
+  // in the topic's unit. Instant for most topics; driving distance makes
+  // one more network call (a single-pair route lookup) at this point.
+  function finalizeCandidate(topic, candidate){
+    if(topic.searchType === "greatcircle"){
+      return Promise.resolve(haversineKm(topic.anchor.lat, topic.anchor.lon, candidate.lat, candidate.lon));
+    }
+    if(topic.searchType === "driving_distance"){
+      const url = `${OSRM_ROUTE}${topic.anchor.lon},${topic.anchor.lat};${candidate.lon},${candidate.lat}?overview=false`;
+      return fetch(url).then(r => {
+        if(!r.ok) throw new Error("HTTP " + r.status + " from the routing service");
+        return r.json();
+      }).then(json => {
+        if(json.code !== "Ok" || !json.routes || !json.routes[0]){
+          throw new Error("The routing service couldn't find a driving route for this one.");
+        }
+        return json.routes[0].distance / 1000;
       });
-      el("backBtn").addEventListener("click", () => {
-        el("loadingScreen").classList.add("hidden");
-        el("setupScreen").classList.remove("hidden");
-      });
-    });
+    }
+    return Promise.resolve(candidate.value);
+  }
+
+  function exampleSourceUrl(topic){
+    if(topic.searchType === "rest_countries"){
+      return topic.exampleUrl;
+    }
+    return "https://query.wikidata.org/#" + encodeURIComponent(topic.exampleQuery);
   }
 
   // ---------- Game screen ----------
   function startGameScreen(){
-    el("loadingScreen").classList.add("hidden");
     el("gameScreen").classList.remove("hidden");
     el("gameTopicTitle").textContent = state.topic.label;
     el("gameTotalLine").textContent = `Starting total: ${fmtValue(state.startingTotal, state.topic.unit)} · ${MAX_GUESSES} guesses each · closest to zero without going under wins`;
-    el("sourceLabel").textContent = state.topic.fetchType === "rest_countries" ? "REST Countries" : "Wikidata";
-    el("sourceLink").href = state.queryUrlHuman;
-    el("sourceLinkResults").href = state.queryUrlHuman;
+    el("sourceLabel").textContent = state.topic.searchType === "rest_countries" ? "REST Countries" : "Wikidata";
+    const exampleUrl = exampleSourceUrl(state.topic);
+    el("sourceLink").href = exampleUrl;
+    el("sourceLinkResults").href = exampleUrl;
     renderScoreboard();
     renderTurn();
   }
@@ -718,9 +757,9 @@ LIMIT 500`
   }
 
   // Common short names / alternate names that don't literally appear inside
-  // the official Wikidata label, so plain substring/Levenshtein matching
-  // would otherwise miss them. Each entry lists extra normalized forms to
-  // also try alongside whatever the player actually typed.
+  // the official label, so a plain substring search would otherwise miss
+  // them. Each entry lists extra search terms to also try, in order, until
+  // one of them returns something.
   const ALIASES = {
     "usa": ["united states of america", "united states"],
     "us": ["united states of america", "united states"],
@@ -747,62 +786,50 @@ LIMIT 500`
     "vatican": ["vatican city", "holy see"]
   };
 
-  function candidateNorms(norm){
-    const extra = ALIASES[norm] || [];
-    return [norm, ...extra];
-  }
-
-  function findCandidates(guessRaw){
+  function guessSearchTerms(guessRaw){
     const norm = normalize(guessRaw);
-    if(!norm) return [];
-    const norms = candidateNorms(norm);
-
-    // exact match first, trying the typed form and any known aliases
-    for(const n of norms){
-      const exact = state.dataset.find(d => d.norm === n);
-      if(exact) return [{...exact, score:0}];
-    }
-
-    const scored = state.dataset.map(d => {
-      let best = Infinity;
-      const dWords = d.norm.split(" ");
-      norms.forEach(n => {
-        let score;
-        const nWords = n.split(" ");
-        if(dWords.includes(n) || nWords.includes(d.norm)){
-          // the guess is a whole word inside the label (e.g. "korea" in "north korea"), or vice versa
-          score = 0.5;
-        } else if(d.norm.startsWith(n) || n.startsWith(d.norm)){
-          score = Math.min(Math.abs(d.norm.length - n.length) * 0.3, 2.5);
-        } else if(d.norm.includes(n) || n.includes(d.norm)){
-          score = Math.min(Math.abs(d.norm.length - n.length) * 0.3, 3) + 0.5;
-        } else {
-          score = levenshtein(n, d.norm);
-        }
-        if(score < best) best = score;
-      });
-      return { ...d, score: best };
-    });
-    scored.sort((a,b) => a.score - b.score);
-    const threshold = Math.max(3, Math.ceil(norm.length * 0.4));
-    return scored.filter(s => s.score <= threshold).slice(0,5);
+    return [norm, ...(ALIASES[norm] || [])];
   }
 
-  function submitGuess(){
+  function setGuessBusy(busy){
+    el("guessBtn").disabled = busy;
+    el("guessInput").disabled = busy;
+  }
+
+  async function submitGuess(){
     const input = el("guessInput");
     const raw = input.value.trim();
     if(!raw) return;
     const player = state.players[state.currentIdx];
+    const terms = guessSearchTerms(raw);
 
-    const candidates = findCandidates(raw);
+    setGuessBusy(true);
+    el("suggestBox").innerHTML = `<div class="muted" style="font-size:0.88em;">Searching…</div>`;
+
+    let candidates = [];
+    try {
+      for(const term of terms){
+        candidates = await resolveGuess(state.topic, term);
+        if(candidates.length > 0) break;
+      }
+    } catch(err){
+      setGuessBusy(false);
+      el("suggestBox").innerHTML = `<div class="err">Couldn't reach the data source for that guess (${escapeHtml(err.message)}). Check your connection and try again — this didn't use up a guess.</div>`;
+      return;
+    }
+    setGuessBusy(false);
+
     if(candidates.length === 0){
-      el("suggestBox").innerHTML = `<div class="err">Couldn't find "${escapeHtml(raw)}" in this round's data. Try the well-known name for it (this doesn't use up a guess).</div>`;
+      el("suggestBox").innerHTML = `<div class="err">Couldn't find "${escapeHtml(raw)}" for this topic. Double check the spelling or try the well-known name for it (this doesn't use up a guess).</div>`;
       return;
     }
-    if(candidates.length === 1 && candidates[0].score === 0){
-      applyGuess(player, candidates[0], raw);
+
+    const exactMatches = candidates.filter(c => terms.includes(c.norm));
+    if(exactMatches.length === 1){
+      await confirmCandidate(player, exactMatches[0], raw);
       return;
     }
+
     // ambiguous — ask player to confirm which entity they meant
     state.pendingSuggestions = { raw, candidates };
     el("suggestBox").innerHTML = `
@@ -811,16 +838,26 @@ LIMIT 500`
       <span class="chip" data-idx="none">None of these</span></div>
     `;
     el("suggestBox").querySelectorAll(".chip").forEach(chip => {
-      chip.addEventListener("click", () => {
+      chip.addEventListener("click", async () => {
         const idxAttr = chip.getAttribute("data-idx");
         if(idxAttr === "none"){
           el("suggestBox").innerHTML = `<div class="err">No match — try a different name or spelling. This didn't use up a guess.</div>`;
           return;
         }
         const chosen = state.pendingSuggestions.candidates[parseInt(idxAttr,10)];
-        applyGuess(player, chosen, state.pendingSuggestions.raw);
+        el("suggestBox").innerHTML = `<div class="muted" style="font-size:0.88em;">Working it out…</div>`;
+        await confirmCandidate(player, chosen, state.pendingSuggestions.raw);
       });
     });
+  }
+
+  async function confirmCandidate(player, candidate, rawGuess){
+    try {
+      const value = await finalizeCandidate(state.topic, candidate);
+      applyGuess(player, { label: candidate.label, norm: candidate.norm, value }, rawGuess);
+    } catch(err){
+      el("suggestBox").innerHTML = `<div class="err">Couldn't finish working that one out (${escapeHtml(err.message)}). Try again — this didn't use up a guess.</div>`;
+    }
   }
 
   const GOOD_TEMPLATES = [
@@ -933,7 +970,8 @@ LIMIT 500`
   }
 
   function resetToSetup(){
-    state = { topic:null, dataset:[], players:[], turnOrder:[], currentIdx:0, pendingSuggestions:null };
+    state = { topic:null, players:[], turnOrder:[], currentIdx:0, pendingSuggestions:null };
+    el("gameScreen").classList.add("hidden");
     el("resultsScreen").classList.add("hidden");
     el("setupScreen").classList.remove("hidden");
     el("log").innerHTML = "";
