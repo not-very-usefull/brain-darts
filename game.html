@@ -197,7 +197,7 @@
   </div>
 
   <footer>
-    Numbers pulled live from <a class="link-quiet" href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> via public SPARQL queries. Every round uses one query, fetched once, so everyone plays against the same numbers. Coverage is limited to the top ~300 entries per topic — very obscure guesses may not be recognised.
+    Numbers pulled live from <a class="link-quiet" href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a>, <a class="link-quiet" href="https://restcountries.com/" target="_blank" rel="noopener">REST Countries</a> (country populations), and OSRM/OpenStreetMap routing (distance topics) — whichever is the best fit per topic. Every round fetches its data once, so everyone plays against the same numbers. Coverage varies by topic — each one pulls the biggest reliable sample it can, but very obscure guesses may still not be recognised.
   </footer>
 </div>
 
@@ -229,14 +229,9 @@ LIMIT 300`
       label: "Country Populations",
       unit: "people",
       suggestedTotal: 500000000,
-      desc: "Population of countries. Source: Wikidata P1082 (population) on items that are instances of Q6256 (country).",
-      query: `SELECT ?itemLabel ?value WHERE {
-  ?item wdt:P31 wd:Q6256 .
-  ?item wdt:P1082 ?value .
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
-}
-ORDER BY DESC(?value)
-LIMIT 300`
+      fetchType: "rest_countries",
+      desc: "Population of every country. Source: the REST Countries API (restcountries.com), a free public reference dataset built specifically for country data — simpler and more consistent than reconstructing this from a general knowledge graph.",
+      restUrl: "https://restcountries.com/v3.1/all?fields=name,population"
     },
     {
       id: "pl_appearances",
@@ -252,7 +247,7 @@ LIMIT 300`
 }
 GROUP BY ?item ?itemLabel
 ORDER BY DESC(?value)
-LIMIT 300`
+LIMIT 600`
     },
     {
       id: "intl_caps",
@@ -269,7 +264,7 @@ LIMIT 300`
 }
 GROUP BY ?item ?itemLabel
 ORDER BY DESC(?value)
-LIMIT 300`
+LIMIT 600`
     },
     {
       id: "uk_driving_distance",
@@ -278,7 +273,7 @@ LIMIT 300`
       suggestedTotal: 1000,
       fetchType: "uk_driving_distance",
       anchor: { label: "London", lat: 51.5074, lon: -0.1278 },
-      desc: "Driving distance by road from London to UK cities and towns (population over 15,000), in kilometres. Two sources combined: Wikidata (P625 coordinates) for the list of places, and OSRM/OpenStreetMap's free public routing service to compute the actual road distance — Wikidata itself has no driving-distance data.",
+      desc: "Driving distance by road from London to UK cities and towns (population over 5,000), in kilometres. Two sources combined: Wikidata (P625 coordinates) for the list of places, and OSRM/OpenStreetMap's free public routing service to compute the actual road distance — Wikidata itself has no driving-distance data.",
       query: `SELECT ?itemLabel ?lat ?lon WHERE {
   ?item wdt:P31/wdt:P279* wd:Q486972 .
   ?item wdt:P17 wd:Q145 .
@@ -286,11 +281,11 @@ LIMIT 300`
   ?coordNode wikibase:geoLatitude ?lat .
   ?coordNode wikibase:geoLongitude ?lon .
   ?item wdt:P1082 ?pop .
-  FILTER(?pop > 15000)
+  FILTER(?pop > 5000)
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 ORDER BY DESC(?pop)
-LIMIT 150`
+LIMIT 400`
     },
     {
       id: "flight_distance",
@@ -299,25 +294,25 @@ LIMIT 150`
       suggestedTotal: 40000,
       fetchType: "greatcircle_distance",
       anchor: { label: "London", lat: 51.5074, lon: -0.1278 },
-      desc: "Great-circle (\"as the crow flies\") distance from London to major world cities (population over 300,000), in kilometres. Source: Wikidata P625 coordinates, distance computed with the standard haversine formula. This is straight-line distance, not a real flight route, so actual flight distances run a little longer.",
+      desc: "Great-circle (\"as the crow flies\") distance from London to major world cities (population over 100,000), in kilometres. Source: Wikidata P625 coordinates, distance computed with the standard haversine formula. This is straight-line distance, not a real flight route, so actual flight distances run a little longer.",
       query: `SELECT ?itemLabel ?lat ?lon WHERE {
   ?item wdt:P31/wdt:P279* wd:Q515 .
   ?item p:P625/psv:P625 ?coordNode .
   ?coordNode wikibase:geoLatitude ?lat .
   ?coordNode wikibase:geoLongitude ?lon .
   ?item wdt:P1082 ?pop .
-  FILTER(?pop > 300000)
+  FILTER(?pop > 100000)
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 ORDER BY DESC(?pop)
-LIMIT 300`
+LIMIT 500`
     },
     {
       id: "animal_weight",
       label: "Animal Weight (kg)",
       unit: "kg",
       suggestedTotal: 500000,
-      desc: "Typical body mass in kilograms. Source: Wikidata P2067 (mass) on items ranked as species (P105 = Q7432) within Animalia (P171 parent-taxon chain reaches Q729).",
+      desc: "Typical body mass in kilograms. Source: Wikidata P2067 (mass) on items ranked as species (P105 = Q7432) within Animalia (P171 parent-taxon chain reaches Q729). This topic has a very long tail of documented species by mass, so the round pulls a much larger sample (2,000 entries) to make sure common animals aren't crowded out by obscure heavier ones.",
       query: `SELECT ?itemLabel ?value WHERE {
   ?item wdt:P105 wd:Q7432 .
   ?item wdt:P171* wd:Q729 .
@@ -325,7 +320,7 @@ LIMIT 300`
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 ORDER BY DESC(?value)
-LIMIT 300`
+LIMIT 2000`
     },
     {
       id: "uk_stadium_capacity",
@@ -340,7 +335,7 @@ LIMIT 300`
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 ORDER BY DESC(?value)
-LIMIT 300`
+LIMIT 500`
     }
   ];
 
@@ -570,6 +565,22 @@ LIMIT 300`
         if(dataset.length < 5) throw new Error("Wikidata returned too little usable data for this topic.");
         return { dataset, sourceNote: "https://query.wikidata.org/#" + encodeURIComponent(topic.query) };
       });
+    } else if(fetchType === "rest_countries"){
+      work = fetch(topic.restUrl).then(r => {
+        if(!r.ok) throw new Error("HTTP " + r.status + " from the country data service");
+        return r.json();
+      }).then(json => {
+        const entries = [];
+        (Array.isArray(json) ? json : []).forEach(c => {
+          const label = c.name && (c.name.common || c.name.official);
+          const value = c.population;
+          if(!label || typeof value !== "number") return;
+          entries.push({ label, norm: normalize(label), value });
+        });
+        const dataset = dedupeDataset(entries).sort((a,b) => b.value - a.value);
+        if(dataset.length < 5) throw new Error("The country data service returned too little usable data.");
+        return { dataset, sourceNote: "https://restcountries.com/" };
+      });
     } else if(fetchType === "greatcircle_distance"){
       work = fetchWikidataJson(topic.query).then(json => {
         const places = parseCoordBindings(json);
@@ -648,6 +659,7 @@ LIMIT 300`
     el("gameScreen").classList.remove("hidden");
     el("gameTopicTitle").textContent = state.topic.label;
     el("gameTotalLine").textContent = `Starting total: ${fmtValue(state.startingTotal, state.topic.unit)} · ${MAX_GUESSES} guesses each · closest to zero without going under wins`;
+    el("sourceLabel").textContent = state.topic.fetchType === "rest_countries" ? "REST Countries" : "Wikidata";
     el("sourceLink").href = state.queryUrlHuman;
     el("sourceLinkResults").href = state.queryUrlHuman;
     renderScoreboard();
@@ -705,23 +717,71 @@ LIMIT 300`
     el("guessInput").focus();
   }
 
+  // Common short names / alternate names that don't literally appear inside
+  // the official Wikidata label, so plain substring/Levenshtein matching
+  // would otherwise miss them. Each entry lists extra normalized forms to
+  // also try alongside whatever the player actually typed.
+  const ALIASES = {
+    "usa": ["united states of america", "united states"],
+    "us": ["united states of america", "united states"],
+    "america": ["united states of america"],
+    "uk": ["united kingdom"],
+    "britain": ["united kingdom"],
+    "great britain": ["united kingdom"],
+    "uae": ["united arab emirates"],
+    "emirates": ["united arab emirates"],
+    "drc": ["democratic republic of the congo"],
+    "congo kinshasa": ["democratic republic of the congo"],
+    "congo brazzaville": ["republic of the congo"],
+    "burma": ["myanmar"],
+    "holland": ["netherlands"],
+    "czech republic": ["czechia"],
+    "czechia": ["czech republic"],
+    "ivory coast": ["cote d ivoire"],
+    "cote d ivoire": ["ivory coast"],
+    "north korea": ["democratic people s republic of korea"],
+    "south korea": ["republic of korea"],
+    "swaziland": ["eswatini"],
+    "cape verde": ["cabo verde"],
+    "macedonia": ["north macedonia"],
+    "vatican": ["vatican city", "holy see"]
+  };
+
+  function candidateNorms(norm){
+    const extra = ALIASES[norm] || [];
+    return [norm, ...extra];
+  }
+
   function findCandidates(guessRaw){
     const norm = normalize(guessRaw);
     if(!norm) return [];
-    // exact match first
-    const exact = state.dataset.find(d => d.norm === norm);
-    if(exact) return [{...exact, score:0}];
+    const norms = candidateNorms(norm);
+
+    // exact match first, trying the typed form and any known aliases
+    for(const n of norms){
+      const exact = state.dataset.find(d => d.norm === n);
+      if(exact) return [{...exact, score:0}];
+    }
 
     const scored = state.dataset.map(d => {
-      let score;
-      if(d.norm.startsWith(norm) || norm.startsWith(d.norm)){
-        score = Math.abs(d.norm.length - norm.length) * 0.5; // strong partial match, cheap score
-      } else if(d.norm.includes(norm) || norm.includes(d.norm)){
-        score = Math.abs(d.norm.length - norm.length) * 0.8 + 1;
-      } else {
-        score = levenshtein(norm, d.norm);
-      }
-      return { ...d, score };
+      let best = Infinity;
+      const dWords = d.norm.split(" ");
+      norms.forEach(n => {
+        let score;
+        const nWords = n.split(" ");
+        if(dWords.includes(n) || nWords.includes(d.norm)){
+          // the guess is a whole word inside the label (e.g. "korea" in "north korea"), or vice versa
+          score = 0.5;
+        } else if(d.norm.startsWith(n) || n.startsWith(d.norm)){
+          score = Math.min(Math.abs(d.norm.length - n.length) * 0.3, 2.5);
+        } else if(d.norm.includes(n) || n.includes(d.norm)){
+          score = Math.min(Math.abs(d.norm.length - n.length) * 0.3, 3) + 0.5;
+        } else {
+          score = levenshtein(n, d.norm);
+        }
+        if(score < best) best = score;
+      });
+      return { ...d, score: best };
     });
     scored.sort((a,b) => a.score - b.score);
     const threshold = Math.max(3, Math.ceil(norm.length * 0.4));
